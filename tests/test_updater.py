@@ -126,7 +126,7 @@ def test_staged_self_test_failure_keeps_installed_version() -> None:
                 version="0.6.1",
             )
         assert (install / "old.txt").is_file()
-        launch_mock.assert_called_once_with(install / "BankStatementToTally.exe")
+        launch_mock.assert_called_once_with(install.resolve() / "BankStatementToTally.exe")
 
 
 def test_locked_install_folder_keeps_and_relaunches_current_version() -> None:
@@ -135,7 +135,7 @@ def test_locked_install_folder_keeps_and_relaunches_current_version() -> None:
         original_replace = updater_main.os.replace
 
         def locked_replace(source, destination):
-            if Path(source) == install:
+            if Path(source) == install.resolve():
                 raise PermissionError("locked application file")
             return original_replace(source, destination)
 
@@ -156,7 +156,7 @@ def test_locked_install_folder_keeps_and_relaunches_current_version() -> None:
             )
         assert (install / "old.txt").is_file()
         assert not install.with_name(f"{install.name}.incoming").exists()
-        launch_mock.assert_called_once_with(install / "BankStatementToTally.exe")
+        launch_mock.assert_called_once_with(install.resolve() / "BankStatementToTally.exe")
         assert '"status": "failed"' in (data / "updates" / "last-result.json").read_text(
             encoding="utf-8"
         )
