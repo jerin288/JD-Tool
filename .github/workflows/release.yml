@@ -1,0 +1,71 @@
+name: Windows release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install locked dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-lock.txt
+
+      - name: Verify tag matches app version
+        shell: pwsh
+        run: |
+          $version = python -c "from app import __version__; print(__version__)"
+          if ("v$($version.Trim())" -ne "${{ github.ref_name }}") {
+            throw "app.__version__ does not match pushed tag."
+          }
+
+      - name: Lint and test
+        shell: pwsh
+        run: |
+          python -m ruff check .
+          python -m pytest -q
+
+      - name: Build updater and JD Tool
+        shell: pwsh
+        run: |
+          python -m PyInstaller --noconfirm --clean JDToolUpdater.spec
+          python -m PyInstaller --noconfirm --clean BankStatementToTally.spec
+
+      - name: Frozen self-test from path with spaces
+        shell: pwsh
+        run: .\scripts\frozen_self_test.ps1
+
+      - name: Package ZIP and SHA-256 manifest
+        shell: pwsh
+        run: .\scripts\package_release.ps1 -Tag "${{ github.ref_name }}"
+
+      - name: Create GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" `
+            "release/JD-Tool-windows-x64-${{ github.ref_name }}.zip" `
+            "release/update-manifest.json" `
+            --repo "${{ github.repository }}" `
+            --title "JD Tool ${{ github.ref_name }}" `
+            --generate-notes `
+            --verify-tag

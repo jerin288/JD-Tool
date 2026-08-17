@@ -1,0 +1,37 @@
+{
+  "schema_version": 2,
+  "template_id": "kotak",
+  "bank_name": "Kotak",
+  "detection_keywords": [
+    "Kotak",
+    "KKBK"
+  ],
+  "mapping": {
+    "transaction_date": 1,
+    "value_date": 2,
+    "description": 3,
+    "reference_number": 4,
+    "cheque_number": null,
+    "debit": null,
+    "credit": null,
+    "amount": 5,
+    "dr_cr": null,
+    "balance": 6,
+    "header_row": 0,
+    "date_format": "AUTO"
+  },
+  "column_aliases": {
+    "transaction_date": ["TRANSACTION DATE"],
+    "value_date": ["VALUE DATE"],
+    "description": ["TRANSACTION DETAILS"],
+    "reference_number": ["CHQ / REF NO."],
+    "amount": ["DEBIT/CREDIT(₹)"],
+    "balance": ["BALANCE(₹)"]
+  },
+  "cleanup_rules": [],
+  "ignore_phrases": [],
+  "multiline_narration": {
+    "enabled": true,
+    "joiner": " "
+  }
+}

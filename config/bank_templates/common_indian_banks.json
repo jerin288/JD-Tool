@@ -1,0 +1,113 @@
+{
+  "schema_version": 2,
+  "defaults": {
+    "mapping": {
+      "transaction_date": null,
+      "value_date": null,
+      "description": null,
+      "reference_number": null,
+      "cheque_number": null,
+      "debit": null,
+      "credit": null,
+      "amount": null,
+      "dr_cr": null,
+      "balance": null,
+      "header_row": 0,
+      "date_format": "AUTO"
+    },
+    "ignore_phrases": [
+      "Opening Balance",
+      "Closing Balance",
+      "Brought Forward",
+      "Carried Forward",
+      "Page Total",
+      "Statement Summary"
+    ],
+    "cleanup_rules": [
+      {"pattern": "\\s+", "replacement": " "}
+    ],
+    "multiline_narration": {"enabled": true, "joiner": " "}
+  },
+  "templates": [
+    {
+      "template_id": "state_bank_of_india",
+      "bank_name": "State Bank of India",
+      "detection_keywords": ["State Bank of India", "SBI", "sbi.co.in"],
+      "column_aliases": {
+        "transaction_date": ["Txn Date"],
+        "value_date": ["Value Date"],
+        "description": ["Description"],
+        "reference_number": ["Ref No./Cheque No."],
+        "debit": ["Debit"],
+        "credit": ["Credit"],
+        "balance": ["Balance"]
+      }
+    },
+    {
+      "template_id": "south_indian_bank",
+      "bank_name": "South Indian Bank",
+      "detection_keywords": ["South Indian Bank", "southindianbank.com"],
+      "column_aliases": {"description": ["Particulars"], "reference_number": ["Chq/Ref No"], "debit": ["Withdrawal"], "credit": ["Deposit"]}
+    },
+    {
+      "template_id": "federal_bank",
+      "bank_name": "Federal Bank",
+      "detection_keywords": ["Federal Bank", "federalbank.co.in"],
+      "column_aliases": {"transaction_date": ["Tran Date"], "description": ["Particulars"], "reference_number": ["Tran ID"]}
+    },
+    {
+      "template_id": "hdfc_bank",
+      "bank_name": "HDFC Bank",
+      "detection_keywords": ["HDFC BANK", "hdfcbank.com"],
+      "column_aliases": {"transaction_date": ["Date"], "value_date": ["Value Dt", "ValueDt"], "description": ["Narration"], "reference_number": ["Chq./Ref.No."], "debit": ["Withdrawal Amt."], "credit": ["Deposit Amt."], "balance": ["Closing Balance"]}
+    },
+    {
+      "template_id": "icici_bank",
+      "bank_name": "ICICI Bank",
+      "detection_keywords": ["ICICI Bank", "icicibank.com"],
+      "column_aliases": {"transaction_date": ["Transaction Date"], "description": ["Transaction Remarks"], "reference_number": ["Cheque Number"], "debit": ["Withdrawal Amount"], "credit": ["Deposit Amount"]}
+    },
+    {
+      "template_id": "axis_bank",
+      "bank_name": "Axis Bank",
+      "detection_keywords": ["Axis Bank", "axisbank.com"],
+      "column_aliases": {"transaction_date": ["Tran Date"], "description": ["Particulars"], "reference_number": ["Chq No"], "debit": ["Debit"], "credit": ["Credit"]}
+    },
+    {
+      "template_id": "kotak_mahindra_bank",
+      "bank_name": "Kotak Mahindra Bank",
+      "detection_keywords": ["Kotak Mahindra Bank", "kotak.com"],
+      "column_aliases": {"transaction_date": ["Date"], "description": ["Narration"], "reference_number": ["Chq / Ref number"], "debit": ["Withdrawal (Dr)"], "credit": ["Deposit (Cr)"]}
+    },
+    {
+      "template_id": "canara_bank",
+      "bank_name": "Canara Bank",
+      "detection_keywords": ["Canara Bank", "canarabank.com"],
+      "column_aliases": {"transaction_date": ["Transaction Date"], "description": ["Description"], "reference_number": ["Cheque No"], "debit": ["Debit Amount"], "credit": ["Credit Amount"]}
+    },
+    {
+      "template_id": "punjab_national_bank",
+      "bank_name": "Punjab National Bank",
+      "detection_keywords": ["Punjab National Bank", "PNB", "pnbindia.in"],
+      "column_aliases": {"transaction_date": ["Txn Date"], "description": ["Transaction Details"], "reference_number": ["Cheque No."], "debit": ["Withdrawal"], "credit": ["Deposit"]}
+    },
+    {
+      "template_id": "bank_of_baroda",
+      "bank_name": "Bank of Baroda",
+      "detection_keywords": ["Bank of Baroda", "bankofbaroda.in"],
+      "column_aliases": {"transaction_date": ["Date"], "description": ["Narration"], "reference_number": ["Cheque No"], "debit": ["Debit"], "credit": ["Credit"]}
+    },
+    {
+      "template_id": "union_bank_of_india",
+      "bank_name": "Union Bank of India",
+      "detection_keywords": ["Union Bank of India", "unionbankofindia.co.in"],
+      "column_aliases": {"transaction_date": ["Tran Date"], "description": ["Remarks"], "reference_number": ["Tran Id"], "debit": ["Debit"], "credit": ["Credit"]}
+    },
+    {
+      "template_id": "yes_bank",
+      "bank_name": "Yes Bank",
+      "detection_keywords": ["YES BANK", "yesbank.in"],
+      "column_aliases": {"transaction_date": ["Transaction Date"], "description": ["Transaction Description"], "reference_number": ["Reference Number"], "debit": ["Debit Amount"], "credit": ["Credit Amount"]}
+    }
+  ]
+}

@@ -1,0 +1,27 @@
+{
+  "appearance_mode": "Light",
+  "default_pdf_folder": "",
+  "default_export_folder": "exports",
+  "default_bank": "Automatic",
+  "page_size": 100,
+  "duplicate_detection_sensitivity": 75,
+  "tally_server_url": "http://localhost:9000",
+  "default_bank_ledger": "",
+  "default_suspense_ledger": "Suspense A/c",
+  "fuzzy_matching_threshold": 78,
+  "ocr_executable_path": "",
+  "ocr_language": "eng",
+  "ocr_dpi": 300,
+  "ocr_page_segmentation_mode": 6,
+  "logging_level": "INFO",
+  "automatic_backup": false,
+  "backup_folder": "backups",
+  "backup_keep": 7,
+  "automatic_update_checks": true,
+  "last_update_check_utc": "",
+  "last_update_attempt_utc": "",
+  "window": {
+    "width": 1440,
+    "height": 900
+  }
+}

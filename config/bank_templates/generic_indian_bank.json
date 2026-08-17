@@ -1,0 +1,42 @@
+{
+  "schema_version": 2,
+  "template_id": "generic_indian_bank",
+  "bank_name": "Generic Indian Bank",
+  "description": "Phase 1 example template; the editable template manager is delivered in Phase 2.",
+  "column_aliases": {
+    "transaction_date": ["Date", "Transaction Date", "Txn Date"],
+    "value_date": ["Value Date"],
+    "description": ["Description", "Narration", "Particulars"],
+    "reference_number": ["Reference Number", "Ref No", "UTR Number"],
+    "cheque_number": ["Cheque Number", "Chq No"],
+    "debit": ["Debit", "Withdrawal"],
+    "credit": ["Credit", "Deposit"],
+    "amount": ["Amount"],
+    "dr_cr": ["DR/CR", "Type"],
+    "balance": ["Balance"]
+  },
+  "mapping": {
+    "transaction_date": null,
+    "value_date": null,
+    "description": null,
+    "reference_number": null,
+    "cheque_number": null,
+    "debit": null,
+    "credit": null,
+    "amount": null,
+    "dr_cr": null,
+    "balance": null,
+    "date_format": "AUTO",
+    "header_row": 0
+  },
+  "ignore_phrases": [
+    "Opening Balance",
+    "Closing Balance",
+    "Page Total",
+    "Statement Summary"
+  ],
+  "multiline_narration": {
+    "enabled": true,
+    "joiner": " "
+  }
+}
