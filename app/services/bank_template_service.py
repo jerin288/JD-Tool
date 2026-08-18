@@ -53,16 +53,22 @@ class BankTemplateService:
 
     def detect(self, statement_text: str) -> BankTemplate | None:
         normalized = re.sub(r"\s+", " ", statement_text.lower())
-        scored: list[tuple[int, BankTemplate]] = []
+        statement_header = normalized[:2000]
+        scored: list[tuple[int, int, int, BankTemplate]] = []
         for template in self._templates.values():
-            score = sum(
-                1
+            matches = [
+                keyword
                 for keyword in template.detection_keywords
                 if self._keyword_matches(keyword, normalized)
-            )
-            if score:
-                scored.append((score, template))
-        return max(scored, key=lambda item: item[0])[1] if scored else None
+            ]
+            if matches:
+                header_score = sum(
+                    1 for keyword in matches if self._keyword_matches(keyword, statement_header)
+                )
+                scored.append(
+                    (header_score, len(matches), max(len(keyword) for keyword in matches), template)
+                )
+        return max(scored, key=lambda item: item[:3])[3] if scored else None
 
     @staticmethod
     def _keyword_matches(keyword: str, normalized_text: str) -> bool:

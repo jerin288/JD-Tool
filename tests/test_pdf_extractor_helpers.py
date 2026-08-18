@@ -5,6 +5,7 @@ from app.services.pdf_extractor import PdfExtractor
 
 class FakeCoordinatePage:
     width = 670
+    height = 800
 
     def __init__(self, words, rects):
         self.words = words
@@ -135,6 +136,55 @@ class PdfHelperTests(unittest.TestCase):
         self.assertEqual(len(continued), 1)
         self.assertEqual(continued[0][3], "UPI/NEXT/ Receipt")
         self.assertEqual(continued[0][6], "500.00")
+
+    def test_gridless_date_table_handles_repeated_sections_and_multiline_rows(self) -> None:
+        words = [
+            word("DATE", 10, 100),
+            word("PARTICULARS", 80, 100),
+            word("CHQ.NO.", 300, 100),
+            word("WITHDRAWALS", 380, 100),
+            word("DEPOSITS", 470, 100),
+            word("BALANCE", 560, 100),
+            word("01-07-2026", 10, 120),
+            word("NEFT", 80, 120),
+            word("receipt", 115, 120),
+            word("REF1", 300, 120),
+            word("500.00", 470, 120),
+            word("1,500.00Cr", 560, 120),
+            word("UTR", 80, 132),
+            word("ABC", 110, 132),
+            word("02-07-2026", 10, 150),
+            word("PAYMENT", 80, 150),
+            word("REF2", 300, 150),
+            word("200.00", 380, 150),
+            word("1,300.00Cr", 560, 150),
+            word("Cumulative", 80, 180),
+            word("Totals:", 145, 180),
+            word("DATE", 10, 300),
+            word("PARTICULARS", 80, 300),
+            word("CHQ.NO.", 300, 300),
+            word("WITHDRAWALS", 380, 300),
+            word("DEPOSITS", 470, 300),
+            word("BALANCE", 560, 300),
+            word("03-07-2026", 10, 320),
+            word("CASH", 80, 320),
+            word("300.00", 470, 320),
+            word("1,600.00Cr", 560, 320),
+            word("Cumulative", 80, 350),
+            word("Totals:", 145, 350),
+        ]
+
+        rows = PdfExtractor._extract_gridless_date_table(FakeCoordinatePage(words, []))
+
+        self.assertEqual(len(rows), 5)
+        self.assertEqual(rows[0], [
+            "Date", "Particulars", "Cheque Number", "Withdrawals", "Deposits", "Balance Amount"
+        ])
+        self.assertEqual(rows[1], [
+            "01-07-2026", "NEFT receipt UTR ABC", "REF1", "", "500.00", "1,500.00Cr"
+        ])
+        self.assertEqual(rows[2][3:], ["200.00", "", "1,300.00Cr"])
+        self.assertEqual(rows[4][1], "CASH")
 
     def test_stacked_table_is_split_using_date_anchors(self) -> None:
         words = [

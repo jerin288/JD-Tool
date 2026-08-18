@@ -101,7 +101,7 @@
       "template_id": "union_bank_of_india",
       "bank_name": "Union Bank of India",
       "detection_keywords": ["Union Bank of India", "unionbankofindia.co.in"],
-      "column_aliases": {"transaction_date": ["Tran Date"], "description": ["Remarks"], "reference_number": ["Tran Id"], "debit": ["Debit"], "credit": ["Credit"]}
+      "column_aliases": {"transaction_date": ["Date", "Tran Date"], "description": ["Particulars", "Remarks"], "reference_number": ["Tran Id"], "cheque_number": ["Chq.No.", "Cheque Number"], "debit": ["Withdrawals", "Debit"], "credit": ["Deposits", "Credit"], "balance": ["Balance"]}
     },
     {
       "template_id": "yes_bank",

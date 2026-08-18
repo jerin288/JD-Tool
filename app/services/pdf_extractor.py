@@ -117,8 +117,11 @@ class PdfExtractor:
                         elif cleaned_table:
                             tables.append(cleaned_table)
                     gridless_table = self._extract_gridless_serial_table(page, found_tables)
+                    date_table = self._extract_gridless_date_table(page)
                     if gridless_table:
                         tables = [gridless_table]
+                    elif date_table:
+                        tables = [date_table]
                     elif not self._has_useful_table(tables):
                         coordinate_table, coordinate_headers, coordinate_starts = self._extract_coordinate_table(
                             page, coordinate_headers, coordinate_starts
@@ -446,6 +449,153 @@ class PdfExtractor:
             if any(row):
                 rows.append(row)
         return rows
+
+    @classmethod
+    def _extract_gridless_date_table(cls, page: Any) -> list[list[str]]:
+        """Rebuild fixed-width statements whose transaction date anchors each row.
+
+        Finacle printouts from Union Bank can contain two logical statement pages
+        on one PDF page. They have no table borders or serial-number column, but
+        repeat a stable DATE/PARTICULARS/CHQ.NO./WITHDRAWALS/DEPOSITS/BALANCE
+        header. Split each repeated section independently and use transaction
+        dates as row boundaries so multiline narration remains attached.
+        """
+        words = page.extract_words(
+            x_tolerance=2, y_tolerance=3, keep_blank_chars=False
+        ) or []
+        specifications = (
+            ("Date", {"date", "transactiondate", "trandate", "txndate"}),
+            ("Particulars", {"particulars", "description", "narration", "remarks"}),
+            ("Cheque Number", {"chqno", "chq", "chequeno", "chequenumber", "instrumentno"}),
+            ("Withdrawals", {"withdrawal", "withdrawals", "debit"}),
+            ("Deposits", {"deposit", "deposits", "credit"}),
+            ("Balance Amount", {"balance", "closingbalance"}),
+        )
+        sections: list[tuple[float, float, list[str], list[float]]] = []
+        lines = cls._word_lines(words)
+        for line in lines:
+            anchors: list[tuple[float, str]] = []
+            for label, aliases in specifications:
+                match = next(
+                    (
+                        word
+                        for word in line
+                        if re.sub(r"[^a-z0-9]+", "", str(word["text"]).casefold())
+                        in aliases
+                    ),
+                    None,
+                )
+                if match is not None:
+                    anchors.append((float(match["x0"]), label))
+            labels = {label for _, label in anchors}
+            required = {"Date", "Particulars", "Withdrawals", "Deposits", "Balance Amount"}
+            if required.issubset(labels):
+                ordered = sorted(anchors)
+                labels_in_order = [label for _, label in ordered]
+                positions = [position for position, _ in ordered]
+                column_starts: list[float] = []
+                for index, (position, label) in enumerate(ordered):
+                    if label == "Date":
+                        column_starts.append(position - 10)
+                    elif label == "Particulars":
+                        column_starts.append(position - 2)
+                    elif label == "Cheque Number":
+                        column_starts.append(position - 15)
+                    else:
+                        column_starts.append((positions[index - 1] + position) / 2)
+                sections.append(
+                    (
+                        min(float(word["top"]) for word in line),
+                        max(float(word.get("bottom", word["top"])) for word in line),
+                        labels_in_order,
+                        column_starts,
+                    )
+                )
+        if not sections:
+            return []
+        sections.sort(key=lambda item: item[0])
+        if sections[0][0] > 250:
+            sections.insert(0, (0.0, 0.0, sections[0][2].copy(), sections[0][3].copy()))
+
+        rebuilt: list[list[str]] = []
+        for section_index, (header_top, header_bottom, headers, starts) in enumerate(sections):
+            section_bottom = (
+                sections[section_index + 1][0] - 2
+                if section_index + 1 < len(sections)
+                else float(page.height)
+            )
+            for line in lines:
+                line_top = min(float(word["top"]) for word in line)
+                if not header_bottom < line_top < section_bottom:
+                    continue
+                normalized = cls.normalize_table_header(
+                    " ".join(str(word["text"]) for word in line)
+                )
+                raw_line = " ".join(str(word["text"]) for word in line).casefold()
+                if normalized.startswith("cumulative totals") or "finacle.ubi.com" in raw_line:
+                    section_bottom = min(section_bottom, line_top - 2)
+                    break
+
+            body_start = header_bottom
+            for line in lines:
+                line_top = min(float(word["top"]) for word in line)
+                if not body_start <= line_top < section_bottom:
+                    continue
+                normalized = cls.normalize_table_header(
+                    " ".join(str(word["text"]) for word in line)
+                )
+                if normalized.startswith("transaction details page"):
+                    body_start = max(
+                        body_start,
+                        max(float(word.get("bottom", word["top"])) for word in line),
+                    )
+
+            body_words = [
+                word
+                for word in words
+                if body_start < float(word["top"]) < section_bottom
+                and starts[0] - 2 <= float(word["x0"])
+            ]
+            first_column_right = starts[1]
+            date_anchors = sorted(
+                (
+                    word
+                    for word in body_words
+                    if starts[0] - 2 <= float(word["x0"]) < first_column_right
+                    and cls._looks_like_date(str(word["text"]))
+                ),
+                key=lambda word: float(word["top"]),
+            )
+            if not date_anchors:
+                continue
+
+            def row_for_band(top: float, bottom: float) -> list[str]:
+                cells: list[list[dict[str, Any]]] = [[] for _ in headers]
+                for word in body_words:
+                    word_top = float(word["top"])
+                    if not top <= word_top < bottom:
+                        continue
+                    column_index = bisect_right(starts, float(word["x0"]) + 1) - 1
+                    if 0 <= column_index < len(cells):
+                        cells[column_index].append(word)
+                return [cls._join_positioned_words(cell) for cell in cells]
+
+            rebuilt.append(headers.copy())
+            leading = row_for_band(body_start + 1, float(date_anchors[0]["top"]) - 2)
+            particulars_index = headers.index("Particulars")
+            if leading[particulars_index] and (section_index > 0 or header_top == 0):
+                rebuilt.append(leading)
+            for anchor_index, anchor in enumerate(date_anchors):
+                top = float(anchor["top"]) - 2
+                bottom = (
+                    float(date_anchors[anchor_index + 1]["top"]) - 2
+                    if anchor_index + 1 < len(date_anchors)
+                    else section_bottom
+                )
+                row = row_for_band(top, bottom)
+                if any(row):
+                    rebuilt.append(row)
+        return rebuilt
 
     @classmethod
     def _extract_coordinate_table(

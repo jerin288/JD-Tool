@@ -117,6 +117,19 @@ class PhaseTwoServiceTests(unittest.TestCase):
         self.assertIsNotNone(detected)
         self.assertEqual(detected.template_id, "kotak")  # type: ignore[union-attr]
 
+    def test_bank_name_in_header_outranks_beneficiary_bank_names(self) -> None:
+        template_directory = Path(__file__).resolve().parents[1] / "config" / "bank_templates"
+        service = BankTemplateService(template_directory)
+
+        detected = service.detect(
+            "UNION BANK OF INDIA THRISSUR MAIN STATEMENT OF ACCOUNT "
+            + ("transaction details " * 200)
+            + "Beneficiary Bank KOTAK MAHINDRA BANK"
+        )
+
+        self.assertIsNotNone(detected)
+        self.assertEqual(detected.template_id, "union_bank_of_india")  # type: ignore[union-attr]
+
 
 if __name__ == "__main__":
     unittest.main()
