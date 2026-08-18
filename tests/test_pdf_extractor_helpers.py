@@ -336,5 +336,40 @@ class PdfHelperTests(unittest.TestCase):
             )
         )
 
+    def test_ocr_unavailable_skips_blank_page_but_keeps_readable_pages(self) -> None:
+        from pathlib import Path
+        from unittest.mock import patch
+
+        from app.services.ocr_service import OcrService, TesseractNotFoundError
+        from app.services.pdf_extractor import ExtractedPage
+
+        extractor = PdfExtractor(OcrService())
+        pages = [
+            ExtractedPage(1, "Date Particulars Balance\n1-1-24 Opening 100", []),
+            ExtractedPage(2, "", []),
+            ExtractedPage(3, "Date Particulars Balance\n2-1-24 ATM 90", []),
+        ]
+        with patch.object(
+            extractor.ocr_service, "extract_pages", side_effect=TesseractNotFoundError("not found")
+        ):
+            result_pages, warnings = extractor._ocr_empty_pages(Path("x.pdf"), "", pages, None)
+        self.assertEqual(len(result_pages), 3)
+        self.assertTrue(any("Page(s) 2" in warning for warning in warnings))
+
+    def test_ocr_unavailable_and_all_pages_blank_still_raises(self) -> None:
+        from pathlib import Path
+        from unittest.mock import patch
+
+        from app.services.ocr_service import OcrService, TesseractNotFoundError
+        from app.services.pdf_extractor import ExtractedPage, PdfExtractionError
+
+        extractor = PdfExtractor(OcrService())
+        pages = [ExtractedPage(1, "", []), ExtractedPage(2, "", [])]
+        with patch.object(
+            extractor.ocr_service, "extract_pages", side_effect=TesseractNotFoundError("not found")
+        ):
+            with self.assertRaises(PdfExtractionError):
+                extractor._ocr_empty_pages(Path("x.pdf"), "", pages, None)
+
 if __name__ == "__main__":
     unittest.main()

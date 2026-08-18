@@ -236,11 +236,22 @@ class PdfExtractor:
         empty_pages = [page.page_number for page in pages if not page.text.strip() and not page.tables]
         if not empty_pages:
             return pages, []
+        has_readable_pages = len(empty_pages) < len(pages)
         if self.ocr_service is None:
+            if has_readable_pages:
+                return pages, [
+                    f"Page(s) {', '.join(str(n) for n in empty_pages)} appear blank or scanned and were "
+                    "skipped (OCR is not configured)."
+                ]
             raise PdfExtractionError("This appears to be a scanned statement, but OCR is not configured.")
         try:
             ocr_pages, warnings = self.ocr_service.extract_pages(path, empty_pages, password, progress)
         except TesseractNotFoundError as exc:
+            if has_readable_pages:
+                return pages, [
+                    f"Page(s) {', '.join(str(n) for n in empty_pages)} appear blank or scanned and were "
+                    f"skipped ({exc})."
+                ]
             raise PdfExtractionError(str(exc)) from exc
         by_number = {page.page_number: page for page in ocr_pages}
         for index, page in enumerate(pages):
