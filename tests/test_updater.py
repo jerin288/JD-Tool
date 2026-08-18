@@ -44,6 +44,38 @@ def create_layout(root: Path) -> tuple[Path, Path, Path]:
     return install, data, staging
 
 
+def test_validate_copied_staging_rejects_truncated_dll() -> None:
+    import sys
+
+    with TemporaryDirectory() as directory:
+        root = Path(directory)
+        staging = root / "staging" / "_internal"
+        incoming = root / "incoming" / "_internal"
+        staging.mkdir(parents=True)
+        incoming.mkdir(parents=True)
+        dll_name = f"python3{sys.version_info.minor}.dll"
+        (staging / dll_name).write_bytes(b"x" * 5000)
+        # Simulate a copy that "succeeded" (file exists) but was truncated mid-write.
+        (incoming / dll_name).write_bytes(b"")
+        with pytest.raises(updater_main.UpdaterError, match="corrupt"):
+            updater_main._validate_copied_staging(staging.parent, incoming.parent)
+
+
+def test_validate_copied_staging_accepts_matching_dll_size() -> None:
+    import sys
+
+    with TemporaryDirectory() as directory:
+        root = Path(directory)
+        staging = root / "staging" / "_internal"
+        incoming = root / "incoming" / "_internal"
+        staging.mkdir(parents=True)
+        incoming.mkdir(parents=True)
+        dll_name = f"python3{sys.version_info.minor}.dll"
+        (staging / dll_name).write_bytes(b"x" * 5000)
+        (incoming / dll_name).write_bytes(b"x" * 5000)
+        updater_main._validate_copied_staging(staging.parent, incoming.parent)
+
+
 def test_validate_paths_rejects_staging_outside_user_update_folder() -> None:
     with TemporaryDirectory() as directory:
         root = Path(directory)

@@ -15,6 +15,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import time
 import uuid
 from pathlib import Path
@@ -181,10 +182,17 @@ def write_result(data_root: Path, *, status: str, version: str, message: str) ->
 
 
 def _validate_copied_staging(staging: Path, incoming: Path) -> None:
-    """Reject incomplete PyInstaller onedir copies before the folder is swapped."""
-    for relative in (Path("_internal") / "python312.dll", Path("_internal") / "python3.dll"):
-        if (staging / relative).is_file() and not (incoming / relative).is_file():
+    """Reject incomplete or corrupt PyInstaller onedir copies before the folder is swapped."""
+    version_specific = f"python3{sys.version_info.minor}.dll"
+    for relative in (Path("_internal") / version_specific, Path("_internal") / "python3.dll"):
+        source = staging / relative
+        destination = incoming / relative
+        if not source.is_file():
+            continue
+        if not destination.is_file():
             raise UpdaterError(f"The staged application is missing {relative.as_posix()}.")
+        if destination.stat().st_size != source.stat().st_size:
+            raise UpdaterError(f"The staged application has a corrupt {relative.as_posix()}.")
 
 
 def apply_update(
