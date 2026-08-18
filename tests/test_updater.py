@@ -162,6 +162,39 @@ def test_locked_install_folder_keeps_and_relaunches_current_version() -> None:
         )
 
 
+def test_copy_failure_cleans_partial_incoming_and_relaunches_current_version() -> None:
+    with TemporaryDirectory() as directory:
+        install, data, staging = create_layout(Path(directory))
+        incoming = install.with_name(f"{install.name}.incoming")
+
+        def partial_copy(source, destination, **_kwargs):
+            del source
+            destination.mkdir(parents=True, exist_ok=True)
+            (destination / "BankStatementToTally.exe").write_text("partial", encoding="utf-8")
+            raise OSError("copy failed")
+
+        with (
+            patch("updater_main.wait_for_process", return_value=True),
+            patch("updater_main.run_self_test"),
+            patch("updater_main.shutil.copytree", side_effect=partial_copy),
+            patch("updater_main.launch_application", return_value=FakeProcess()) as launch_mock,
+            pytest.raises(OSError, match="copy failed"),
+        ):
+            updater_main.apply_update(
+                pid=123,
+                install_dir=install,
+                staging_dir=staging,
+                data_root=data,
+                launch_exe="BankStatementToTally.exe",
+                version="0.6.1",
+            )
+        assert (install / "old.txt").is_file()
+        assert not incoming.exists()
+        launch_mock.assert_called_once_with(install.resolve() / "BankStatementToTally.exe")
+        result = (data / "updates" / "last-result.json").read_text(encoding="utf-8")
+        assert '"status": "failed"' in result
+
+
 def test_application_health_marker_is_atomic_and_scoped_to_updates() -> None:
     with TemporaryDirectory() as directory:
         data = Path(directory)
