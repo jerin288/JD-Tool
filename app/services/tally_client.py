@@ -13,7 +13,13 @@ from urllib.parse import urlparse
 import requests
 
 from app.models.export import TallyImportResponse
-from app.models.tally import TallyCompany, TallyCompanyData, TallyConnectionResult, TallyLedger
+from app.models.tally import (
+    TallyCompany,
+    TallyCompanyData,
+    TallyConnectionResult,
+    TallyLedger,
+    TallyLedgerCreationResult,
+)
 
 LOGGER = logging.getLogger(__name__)
 NUMERIC_CHARACTER_REFERENCE = re.compile(br"&#(?:(?:x|X)([0-9a-fA-F]+)|([0-9]+));")
@@ -38,6 +44,14 @@ class TallyInvalidResponseError(TallyConnectionError):
 
 class TallyNoCompanyError(TallyConnectionError):
     pass
+
+
+class TallyLedgerCreationError(TallyConnectionError):
+    """Raised when Tally does not report a successful ledger creation."""
+
+    def __init__(self, message: str, result: TallyLedgerCreationResult | None = None) -> None:
+        super().__init__(message)
+        self.result = result
 
 
 class HttpResponse(Protocol):
@@ -115,6 +129,57 @@ class TallyClient:
             last_voucher_id=self._first_text(root, "LASTVCHID"),
             messages=messages,
         )
+
+    def create_ledger(self, company_name: str, ledger_name: str, parent_group: str) -> TallyLedgerCreationResult:
+        """Create a ledger under an existing Tally group using an All Masters import."""
+        company_name = company_name.strip()
+        ledger_name = ledger_name.strip()
+        parent_group = parent_group.strip()
+        if not company_name:
+            raise TallyNoCompanyError("Select an open Tally company first.")
+        if not ledger_name:
+            raise ValueError("Enter a ledger name.")
+        if not parent_group:
+            raise ValueError("Enter a parent group.")
+
+        envelope = ET.Element("ENVELOPE")
+        header = ET.SubElement(envelope, "HEADER")
+        ET.SubElement(header, "TALLYREQUEST").text = "Import Data"
+        body = ET.SubElement(envelope, "BODY")
+        import_data = ET.SubElement(body, "IMPORTDATA")
+        request_description = ET.SubElement(import_data, "REQUESTDESC")
+        ET.SubElement(request_description, "REPORTNAME").text = "All Masters"
+        static = ET.SubElement(request_description, "STATICVARIABLES")
+        ET.SubElement(static, "SVCURRENTCOMPANY").text = company_name
+        request_data = ET.SubElement(import_data, "REQUESTDATA")
+        tally_message = ET.SubElement(request_data, "TALLYMESSAGE", {"xmlns:UDF": "TallyUDF"})
+        ledger = ET.SubElement(
+            tally_message,
+            "LEDGER",
+            {"NAME": ledger_name, "ACTION": "Create", "OBJVIEW": "Ledger View"},
+        )
+        ET.SubElement(ledger, "PARENT").text = parent_group
+
+        root = self._post(
+            ET.tostring(envelope, encoding="utf-8", xml_declaration=True),
+            allow_tally_errors=True,
+        )
+        messages = tuple(
+            text for tag, text in self._all_text(root)
+            if tag in {"LINEERROR", "ERROR", "ERRORMSG"}
+        )
+        result = TallyLedgerCreationResult(
+            created=self._integer_text(root, "CREATED"),
+            altered=self._integer_text(root, "ALTERED"),
+            errors=self._integer_text(root, "ERRORS"),
+            messages=messages,
+        )
+        if not result.succeeded:
+            detail = "; ".join(messages) or (
+                f"Tally created {result.created} ledger(s) and reported {result.errors} error(s)."
+            )
+            raise TallyLedgerCreationError(f"Ledger '{ledger_name}' was not created: {detail}", result)
+        return result
 
     def _export_collection(
         self, definition: _CollectionDefinition, company_name: str = ""

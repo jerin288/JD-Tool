@@ -294,6 +294,47 @@ class PdfHelperTests(unittest.TestCase):
         self.assertEqual(rows[1][3:7], ["Card dues debited", "VP-1", "-10,772.45", "14,090.30"])
         self.assertEqual(rows[2][1:7], ["28 Apr 2025", "28 Apr 2025", "NEFT DEMO", "REF-2", "+12,500.00", "26,590.30"])
 
+    def test_projection_aligns_coordinate_continuation_columns(self) -> None:
+        source_headers = [
+            "SlNo",
+            "Transaction Date",
+            "Value Date",
+            "Particulars",
+            "Cheque Number",
+            "Withdrawals",
+            "Deposits",
+            "Balance Amount",
+        ]
+        target_headers = ["Date", "Particulars", "Withdrawals", "Deposits", "Balance Amount"]
+        rows = [[
+            "9",
+            "11-Aug-2026",
+            "11-Aug-2026",
+            "UPI/SBIN/217939693028",
+            "",
+            "500.00",
+            "",
+            "653.53",
+        ]]
+
+        projected = PdfExtractor._project_rows_to_headers(rows, source_headers, target_headers)
+
+        self.assertEqual(
+            projected[0],
+            ["11-Aug-2026", "UPI/SBIN/217939693028", "500.00", "", "653.53"],
+        )
+
+    def test_statement_header_row_recognises_common_columns(self) -> None:
+        self.assertTrue(
+            PdfExtractor._is_statement_header_row(
+                ["Date", "Particulars", "Withdrawals", "Deposits", "Balance Amount"]
+            )
+        )
+        self.assertFalse(
+            PdfExtractor._is_statement_header_row(
+                ["08-Aug-2026", "UPI payment", "500.00", "", "653.53"]
+            )
+        )
 
 if __name__ == "__main__":
     unittest.main()

@@ -4,7 +4,8 @@
 2. Enable the local HTTP/XML interface on port 9000.
 3. Keep Tally open, enter `http://localhost:9000` in the converter, and select **Test Connection**.
 4. Select the open company, download ledgers, and choose the statement's bank ledger.
-5. Review unmatched ledgers and validation errors before export or direct import.
+5. To create a ledger from JD Tool, click **New Ledger**, enter a ledger name, and choose or type an existing Tally parent group. Tally's response is shown if creation fails (for example, a duplicate name or invalid group).
+6. Review unmatched ledgers and validation errors before export or direct import.
 
 Accounting direction used by XML export:
 

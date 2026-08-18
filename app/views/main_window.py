@@ -28,6 +28,7 @@ from app.services.backup_service import BackupService
 from app.services.ocr_service import OcrConfiguration
 from app.services.pdf_extractor import IncorrectPdfPasswordError, PdfPasswordRequiredError
 from app.services.settings_service import SettingsService
+from app.services.tally_client import TallyConnectionError, TallyLedgerCreationError
 from app.services.update_service import (
     UpdateError,
     UpdateNetworkError,
@@ -40,6 +41,7 @@ from app.utils.runtime_paths import resource_path, tcl_path
 from app.views.editable_table import EditableTransactionTable
 from app.views.import_history_frame import ImportHistoryFrame
 from app.views.inline_mapping_panel import InlineMappingPanel
+from app.views.new_ledger_dialog import NewLedgerDialog
 from app.views.saved_rules_frame import SavedRulesFrame
 from app.views.template_manager_frame import TemplateManagerFrame
 from app.views.theme import COLORS, DARK_COLORS, button_style, color
@@ -254,6 +256,7 @@ class BankStatementApplication:
             self._start_extraction,
             self._start_tally_company_load,
             self._start_ledger_matching,
+            self._open_new_ledger,
         )
         self.file_controls.grid(row=0, column=0, sticky="ew", padx=8, pady=(7, 3))
         self._enable_drop(self.file_controls)
@@ -514,11 +517,16 @@ class BankStatementApplication:
             self._tally_test_done(payload)
         elif event_name == "tally_company_done":
             self._tally_company_done(payload)
+        elif event_name == "ledger_create_done":
+            self._ledger_create_done(payload)
+        elif event_name == "ledger_create_failed":
+            self._ledger_create_failed(payload)
         elif event_name == "ledger_match_done":
             self._ledger_match_done(payload)  # type: ignore[arg-type]
         elif event_name in {"tally_test_failed", "tally_company_failed", "ledger_match_failed"}:
             self.tally_connected = False
             self._set_busy(False)
+            self.file_controls.set_new_ledger_enabled(False)
             self.top_toolbar.set_connection("disconnected", "Tally operation failed")
             self._set_status(str(payload), error=True)
         elif event_name == "validation_done":
@@ -634,10 +642,51 @@ class BankStatementApplication:
         self.detail_panel.set_ledger_choices(ledgers)
         self.bulk_toolbar.set_ledgers(ledgers)
         self.saved_rules_frame.set_ledgers(ledgers)
+        self.file_controls.set_new_ledger_enabled(True)
         self._set_status(
             f"{data.company.name}: {len(ledgers):,} ledgers and {len(data.voucher_types)} voucher types loaded"  # type: ignore[attr-defined]
         )
         self._refresh_summary()
+
+    def _open_new_ledger(self) -> None:
+        if self.busy:
+            return
+        NewLedgerDialog(self.root, self._start_ledger_create)
+
+    def _start_ledger_create(self, ledger_name: str, parent_group: str) -> None:
+        if self.busy:
+            return
+        selected_company = self.controller.state.selected_company
+        if selected_company is None:
+            self._set_status("Select and load a Tally company first.", error=True)
+            return
+        if selected_company.name != self.file_controls.company.get().strip():
+            self._set_status("Refresh the selected company first.", error=True)
+            return
+        self._set_busy(True, f"Creating ledger {ledger_name} in Tally Prime...")
+
+        def work() -> None:
+            try:
+                data = self.controller.create_tally_ledger(ledger_name, parent_group)
+                self.worker_events.put(("ledger_create_done", (ledger_name, data)))
+            except Exception as exc:
+                LOGGER.exception("Tally ledger creation failed")
+                self.worker_events.put(("ledger_create_failed", exc))
+
+        threading.Thread(target=work, daemon=True, name="tally-ledger-create").start()
+
+    def _ledger_create_done(self, payload: object) -> None:
+        ledger_name, data = payload  # type: ignore[misc]
+        self._tally_company_done(data)
+        self._set_status(f"Ledger '{ledger_name}' created and ledgers reloaded.")
+
+    def _ledger_create_failed(self, error: object) -> None:
+        self._set_busy(False)
+        self.file_controls.set_new_ledger_enabled(False)
+        if isinstance(error, TallyConnectionError) and not isinstance(error, TallyLedgerCreationError):
+            self.tally_connected = False
+            self.top_toolbar.set_connection("disconnected", "Tally operation failed")
+        self._set_status(str(error), error=True)
 
     def _start_ledger_matching(self, bank_ledger_name: str) -> None:
         if self.busy:

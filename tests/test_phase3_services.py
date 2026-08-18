@@ -1,4 +1,5 @@
 import unittest
+import xml.etree.ElementTree as ET
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
@@ -16,6 +17,7 @@ from app.services.ledger_matcher import LedgerMatcher
 from app.services.tally_client import (
     TallyClient,
     TallyInvalidResponseError,
+    TallyLedgerCreationError,
     TallyNotRunningError,
 )
 from app.services.voucher_type_detector import VoucherTypeDetector
@@ -50,6 +52,14 @@ IMPORT_RESPONSE_XML = b"""
   <CREATED>1</CREATED><ALTERED>0</ALTERED><IGNORED>0</IGNORED><ERRORS>0</ERRORS>
   <CANCELLED>0</CANCELLED><EXCEPTIONS>0</EXCEPTIONS><LASTVCHID>42</LASTVCHID>
 </RESPONSE>
+"""
+
+CREATE_LEDGER_RESPONSE_XML = b"""
+<RESPONSE><CREATED>1</CREATED><ALTERED>0</ALTERED><ERRORS>0</ERRORS></RESPONSE>
+"""
+
+CREATE_LEDGER_ERROR_XML = b"""
+<RESPONSE><CREATED>0</CREATED><ERRORS>1</ERRORS><LINEERROR>Duplicate ledger name</LINEERROR></RESPONSE>
 """
 
 
@@ -144,6 +154,32 @@ class TallyClientTests(unittest.TestCase):
         response = TallyClient(session=FakeSession([payload])).import_vouchers(b"<ENVELOPE/>")
         self.assertFalse(response.succeeded)
         self.assertEqual(response.messages, ("Ledger does not exist",))
+
+    def test_create_ledger_payload_uses_all_masters_import(self) -> None:
+        session = FakeSession([CREATE_LEDGER_RESPONSE_XML])
+        client = TallyClient(session=session)
+        result = client.create_ledger("Demo Company", "New Supplier", "Sundry Creditors")
+        self.assertTrue(result.succeeded)
+        self.assertEqual(result.created, 1)
+        root = ET.fromstring(session.payloads[0])
+        self.assertEqual(root.findtext("./HEADER/TALLYREQUEST"), "Import Data")
+        self.assertEqual(root.findtext("./BODY/IMPORTDATA/REQUESTDESC/REPORTNAME"), "All Masters")
+        self.assertEqual(
+            root.findtext("./BODY/IMPORTDATA/REQUESTDESC/STATICVARIABLES/SVCURRENTCOMPANY"),
+            "Demo Company",
+        )
+        ledger = root.find("./BODY/IMPORTDATA/REQUESTDATA/TALLYMESSAGE/LEDGER")
+        self.assertIsNotNone(ledger)
+        self.assertEqual(ledger.attrib["NAME"], "New Supplier")
+        self.assertEqual(ledger.attrib["ACTION"], "Create")
+        self.assertEqual(ledger.findtext("PARENT"), "Sundry Creditors")
+
+    def test_create_ledger_tally_error_is_raised(self) -> None:
+        client = TallyClient(session=FakeSession([CREATE_LEDGER_ERROR_XML]))
+        with self.assertRaises(TallyLedgerCreationError) as raised:
+            client.create_ledger("Demo Company", "Duplicate Ledger", "Sundry Creditors")
+        self.assertIn("Duplicate ledger name", str(raised.exception))
+        self.assertFalse(raised.exception.result.succeeded)  # type: ignore[union-attr]
 
 
 class LedgerMatcherTests(unittest.TestCase):

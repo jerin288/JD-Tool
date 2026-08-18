@@ -10,7 +10,12 @@ from app.database.manager import DatabaseManager
 from app.models.enums import DuplicateStatus, ImportStatus, ValidationStatus, VoucherType
 from app.models.export import ExportGrouping, ExportOptions, ImportBatch, TallyImportResponse, VoucherMode
 from app.models.matching_rule import MatchingRule
-from app.models.tally import TallyLedger
+from app.models.tally import (
+    TallyCompany,
+    TallyCompanyData,
+    TallyLedger,
+    TallyLedgerCreationResult,
+)
 from app.models.transaction import Transaction
 from app.repositories.import_history_repository import ImportHistoryRepository
 from app.repositories.matching_rule_repository import MatchingRuleRepository
@@ -351,3 +356,80 @@ class ImportHistoryRepositoryTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class LedgerCreationControllerTests(unittest.TestCase):
+    def test_create_tally_ledger_sends_values_and_refreshes_state(self) -> None:
+        class FakeLedgerClient:
+            def __init__(self) -> None:
+                self.creates: list[tuple[str, str, str]] = []
+
+            def create_ledger(
+                self, company_name: str, ledger_name: str, parent_group: str
+            ) -> TallyLedgerCreationResult:
+                self.creates.append((company_name, ledger_name, parent_group))
+                return TallyLedgerCreationResult(created=1)
+
+            def fetch_company_data(self, company: TallyCompany) -> TallyCompanyData:
+                return TallyCompanyData(
+                    company,
+                    (
+                        TallyLedger("New Supplier", "Sundry Creditors"),
+                        TallyLedger("Cash", "Cash-in-Hand"),
+                    ),
+                    (),
+                )
+
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            database = DatabaseManager(root / "ledger.db")
+            database.initialize()
+            fake_client = FakeLedgerClient()
+            controller = AppController(
+                PdfExtractor(),
+                TransactionParser(),
+                TransactionRepository(database),
+                BankTemplateService(root / "templates"),
+                DuplicateDetector(),
+                ValidationService(),
+                ExcelExporter(),
+                MatchingRuleRepository(database),
+                LedgerMatcher(),
+                TallyXmlExporter(),
+                ImportHistoryRepository(database),
+                tally_client_factory=lambda _url: fake_client,
+            )
+            controller.state.selected_company = TallyCompany("Demo Company")
+            data = controller.create_tally_ledger(" New Supplier ", " Sundry Creditors ")
+            self.assertEqual(fake_client.creates, [("Demo Company", "New Supplier", "Sundry Creditors")])
+            self.assertEqual([item.name for item in controller.state.tally_ledgers], ["New Supplier", "Cash"])
+            self.assertEqual(data.company.name, "Demo Company")
+
+    def test_create_tally_ledger_rejects_missing_company_or_tally_error(self) -> None:
+        class FailingLedgerClient:
+            def create_ledger(self, _company: str, _name: str, _parent: str) -> TallyLedgerCreationResult:
+                raise RuntimeError("Ledger 'Duplicate' was not created: Duplicate ledger name")
+
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            database = DatabaseManager(root / "ledger.db")
+            database.initialize()
+            controller = AppController(
+                PdfExtractor(),
+                TransactionParser(),
+                TransactionRepository(database),
+                BankTemplateService(root / "templates"),
+                DuplicateDetector(),
+                ValidationService(),
+                ExcelExporter(),
+                MatchingRuleRepository(database),
+                LedgerMatcher(),
+                TallyXmlExporter(),
+                ImportHistoryRepository(database),
+                tally_client_factory=lambda _url: FailingLedgerClient(),
+            )
+            with self.assertRaisesRegex(RuntimeError, "Select and load a Tally company first"):
+                controller.create_tally_ledger("Duplicate", "Sundry Creditors")
+            controller.state.selected_company = TallyCompany("Demo Company")
+            with self.assertRaisesRegex(RuntimeError, "Duplicate ledger name"):
+                controller.create_tally_ledger("Duplicate", "Sundry Creditors")

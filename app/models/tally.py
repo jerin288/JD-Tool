@@ -27,6 +27,18 @@ class TallyLedger:
 
 
 @dataclass(frozen=True, slots=True)
+class TallyLedgerCreationResult:
+    created: int = 0
+    altered: int = 0
+    errors: int = 0
+    messages: tuple[str, ...] = ()
+
+    @property
+    def succeeded(self) -> bool:
+        return self.errors == 0 and self.created > 0
+
+
+@dataclass(frozen=True, slots=True)
 class TallyCompanyData:
     company: TallyCompany
     ledgers: tuple[TallyLedger, ...]

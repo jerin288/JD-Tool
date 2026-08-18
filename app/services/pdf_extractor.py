@@ -49,6 +49,17 @@ class PdfExtractionResult:
 class PdfExtractor:
     """Extract selectable text and selectively OCR scanned pages."""
 
+    STATEMENT_COLUMN_ALIASES: dict[str, tuple[str, ...]] = {
+        "SlNo": ("slno", "sno", "serial", "serial no"),
+        "Transaction Date": ("date", "transaction date", "txn date", "tran date", "posting date", "transaction"),
+        "Value Date": ("value date", "val date", "value"),
+        "Particulars": ("particulars", "description", "narration", "remarks", "transaction details", "details"),
+        "Cheque Number": ("cheque number", "cheque no", "chq no", "chq ref no", "cheque", "chq", "instrument no"),
+        "Withdrawals": ("withdrawals", "withdrawal", "debit", "debit amount", "withdrawal amount", "withdrawal amt", "dr"),
+        "Deposits": ("deposits", "deposit", "credit", "credit amount", "deposit amount", "deposit amt", "cr"),
+        "Balance Amount": ("balance amount", "balance", "closing balance", "available balance", "running balance"),
+    }
+
     def __init__(self, ocr_service: OcrService | None = None) -> None:
         self.ocr_service = ocr_service
 
@@ -99,11 +110,18 @@ class PdfExtractor:
                 raise PdfExtractionError("The selected PDF contains no pages.")
             coordinate_headers: list[str] | None = None
             coordinate_starts: list[float] | None = None
+            primary_headers: list[str] | None = None
             for page_number, page in enumerate(document.pages, start=1):
                 if progress:
                     progress(page_number - 1, len(document.pages), f"Reading page {page_number}")
                 try:
                     text = page.extract_text(x_tolerance=2, y_tolerance=3) or ""
+                    page_words = page.extract_words(
+                        x_tolerance=2, y_tolerance=3, keep_blank_chars=False
+                    ) or []
+                    detected_header = self._detect_statement_header(page_words)
+                    if detected_header is not None:
+                        coordinate_headers, coordinate_starts, _ = detected_header
                     found_tables = page.find_tables() or []
                     tables: list[list[list[str]]] = []
                     for found_table in found_tables:
@@ -118,6 +136,7 @@ class PdfExtractor:
                             tables.append(cleaned_table)
                     gridless_table = self._extract_gridless_serial_table(page, found_tables)
                     date_table = self._extract_gridless_date_table(page)
+                    page_used_coordinate_table = False
                     if gridless_table:
                         tables = [gridless_table]
                     elif date_table:
@@ -128,6 +147,22 @@ class PdfExtractor:
                         )
                         if coordinate_table:
                             tables = [coordinate_table]
+                            page_used_coordinate_table = True
+                    if primary_headers is None:
+                        for table in tables:
+                            if table and self._is_statement_header_row(table[0]):
+                                primary_headers = table[0]
+                                break
+                    if (
+                        page_used_coordinate_table
+                        and primary_headers is not None
+                        and coordinate_headers is not None
+                        and not self._statement_headers_match(coordinate_headers, primary_headers)
+                    ):
+                        tables = [
+                            self._project_rows_to_headers(table, coordinate_headers, primary_headers)
+                            for table in tables
+                        ]
                     page_rows = [row for table in tables for row in table]
                     if not page_rows and text:
                         page_rows = self._text_to_rows(text)
@@ -140,9 +175,12 @@ class PdfExtractor:
 
         pages, ocr_warnings = self._ocr_empty_pages(path, password, pages, progress)
         warnings.extend(ocr_warnings)
-        all_rows = [row for page in pages for table in page.tables for row in table]
-        if not all_rows:
-            all_rows = [row for page in pages for row in self._text_to_rows(page.text)]
+        all_rows = []
+        for page in pages:
+            page_rows = [row for table in page.tables for row in table]
+            if not page_rows:
+                page_rows = self._text_to_rows(page.text)
+            all_rows.extend(page_rows)
         if not any(page.text.strip() for page in pages):
             raise PdfExtractionError("No readable text was found in this statement, including after OCR.")
         return PdfExtractionResult(path, pages, self._rectangularize(all_rows), warnings)
@@ -173,9 +211,12 @@ class PdfExtractor:
                 pages.append(ExtractedPage(page_index + 1, text))
                 rows.extend(self._text_to_rows(text))
         pages, warnings = self._ocr_empty_pages(path, password, pages, progress)
-        rows = [row for page in pages for table in page.tables for row in table]
-        if not rows:
-            rows = [row for page in pages for row in self._text_to_rows(page.text)]
+        rows = []
+        for page in pages:
+            page_rows = [row for table in page.tables for row in table]
+            if not page_rows:
+                page_rows = self._text_to_rows(page.text)
+            rows.extend(page_rows)
         if not any(page.text.strip() for page in pages):
             raise PdfExtractionError("No readable text was found in this statement, including after OCR.")
         return PdfExtractionResult(
@@ -356,6 +397,52 @@ class PdfExtractor:
     @staticmethod
     def normalize_table_header(value: str) -> str:
         return re.sub(r"\s+", " ", re.sub(r"[^a-z0-9]+", " ", value.lower())).strip()
+
+    @classmethod
+    def _canonical_statement_column(cls, value: str) -> str | None:
+        normalized = cls.normalize_table_header(value)
+        if not normalized:
+            return None
+        for column, aliases in cls.STATEMENT_COLUMN_ALIASES.items():
+            if normalized in aliases:
+                return column
+        return None
+
+    @classmethod
+    def _is_statement_header_row(cls, row: list[str]) -> bool:
+        columns = {
+            column
+            for column in (cls._canonical_statement_column(cell) for cell in row)
+            if column is not None
+        }
+        return (
+            "Transaction Date" in columns
+            and "Particulars" in columns
+            and bool({"Withdrawals", "Deposits", "Balance Amount"} & columns)
+        )
+
+    @classmethod
+    def _statement_headers_match(cls, left: list[str], right: list[str]) -> bool:
+        return [cls._canonical_statement_column(value) for value in left] == [
+            cls._canonical_statement_column(value) for value in right
+        ]
+
+    @classmethod
+    def _project_rows_to_headers(
+        cls, rows: list[list[str]], source_headers: list[str], target_headers: list[str]
+    ) -> list[list[str]]:
+        source_columns = [cls._canonical_statement_column(value) for value in source_headers]
+        source_indexes = {
+            column: index
+            for index, column in enumerate(source_columns)
+            if column is not None
+        }
+        target_columns = [cls._canonical_statement_column(value) for value in target_headers]
+        projections = [source_indexes.get(column) for column in target_columns]
+        return [
+            [row[index] if index is not None and index < len(row) else "" for index in projections]
+            for row in rows
+        ]
 
     @classmethod
     def _extract_gridless_serial_table(

@@ -275,6 +275,21 @@ class AppController:
         self.state.tally_voucher_types = list(data.voucher_types)
         return data
 
+    def create_tally_ledger(self, ledger_name: str, parent_group: str) -> TallyCompanyData:
+        selected_company = self.state.selected_company
+        if selected_company is None:
+            raise RuntimeError("Select and load a Tally company first.")
+        ledger_name = ledger_name.strip()
+        parent_group = parent_group.strip()
+        if not ledger_name:
+            raise ValueError("Enter a ledger name.")
+        if not parent_group:
+            raise ValueError("Enter a parent group.")
+        client = self.tally_client or self.tally_client_factory(self.state.tally_server_url)
+        client.create_ledger(selected_company.name, ledger_name, parent_group)
+        self.tally_client = client
+        return self.load_tally_company(selected_company.name)
+
     def apply_ledger_matching(
         self,
         bank_ledger_name: str,

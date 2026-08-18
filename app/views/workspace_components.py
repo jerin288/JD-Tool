@@ -115,10 +115,13 @@ class FileControlPanel(ctk.CTkFrame):
         on_extract: Callable[[], None],
         on_refresh_ledgers: Callable[[str], None],
         on_match: Callable[[str], None],
+        on_new_ledger: Callable[[], None],
     ) -> None:
         super().__init__(
             master, corner_radius=6, fg_color=color("surface"), border_width=1, border_color=color("separator")
         )
+        self._new_ledger_ready = False
+        self._busy = False
         for column in (0, 1, 2, 3):
             self.grid_columnconfigure(column, weight=1)
 
@@ -175,15 +178,30 @@ class FileControlPanel(ctk.CTkFrame):
             **button_style("primary"),
         )
         self.refresh_button.grid(row=0, column=2, padx=2)
+        self.new_ledger_button = ctk.CTkButton(
+            tally_actions,
+            text="New Ledger",
+            width=88,
+            height=31,
+            command=on_new_ledger,
+            **button_style("primary"),
+        )
+        self.new_ledger_button.grid(row=0, column=3, padx=(2, 0))
+        _set_button_enabled(self.new_ledger_button, False, "primary")
 
     def set_file(self, path: str) -> None:
         self.file_path.delete(0, "end")
         self.file_path.insert(0, path)
 
     def set_busy(self, busy: bool) -> None:
+        self._busy = busy
         state = "disabled" if busy else "normal"
         for button in (self.extract_button, self.refresh_button, self.match_button):
             button.configure(state=state)
+        if self._new_ledger_ready and not busy:
+            _set_button_enabled(self.new_ledger_button, True, "primary")
+        else:
+            _set_button_enabled(self.new_ledger_button, False, "primary")
 
     def set_companies(self, companies: list[str], selected: str = "") -> None:
         choices = companies or ["No company is open"]
@@ -196,6 +214,10 @@ class FileControlPanel(ctk.CTkFrame):
         ] or ["No bank or cash ledgers found"]
         self.bank_ledger.configure(values=choices)
         self.bank_ledger.set(default if default in choices else choices[0])
+
+    def set_new_ledger_enabled(self, enabled: bool) -> None:
+        self._new_ledger_ready = enabled
+        _set_button_enabled(self.new_ledger_button, enabled and not self._busy, "primary")
 
 
 class SummaryBar(ctk.CTkFrame):
