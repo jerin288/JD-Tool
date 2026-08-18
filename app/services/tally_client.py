@@ -156,14 +156,18 @@ class TallyClient:
         ledger = ET.SubElement(
             tally_message,
             "LEDGER",
-            {"NAME": ledger_name, "ACTION": "Create", "OBJVIEW": "Ledger View"},
+            {"NAME": ledger_name, "ACTION": "Create"},
         )
+        # The NAME attribute alone is only used by Tally as a lookup key for
+        # existing masters. For a brand-new object under ACTION="Create" some
+        # Tally builds also require the display name as a child element, or
+        # they report "Master name is missing" and silently drop the import
+        # into an interactive Import Exceptions / MISSING_MASTER_NAME state.
+        ET.SubElement(ledger, "NAME").text = ledger_name
         ET.SubElement(ledger, "PARENT").text = parent_group
 
-        root = self._post(
-            ET.tostring(envelope, encoding="utf-8", xml_declaration=True),
-            allow_tally_errors=True,
-        )
+        request_payload = ET.tostring(envelope, encoding="utf-8", xml_declaration=True)
+        root = self._post(request_payload, allow_tally_errors=True)
         messages = tuple(
             text for tag, text in self._all_text(root)
             if tag in {"LINEERROR", "ERROR", "ERRORMSG"}
@@ -175,8 +179,20 @@ class TallyClient:
             messages=messages,
         )
         if not result.succeeded:
+            exceptions = self._integer_text(root, "EXCEPTIONS")
             detail = "; ".join(messages) or (
                 f"Tally created {result.created} ledger(s) and reported {result.errors} error(s)."
+                + (
+                    f" Tally raised {exceptions} exception(s) needing manual confirmation in its own"
+                    " window — check Tally for an open ledger/master screen and close or complete it."
+                    if exceptions
+                    else ""
+                )
+            )
+            LOGGER.warning(
+                "Tally ledger creation diagnostic - request: %s | response: %s",
+                request_payload.decode("utf-8", errors="replace"),
+                ET.tostring(root, encoding="unicode"),
             )
             raise TallyLedgerCreationError(f"Ledger '{ledger_name}' was not created: {detail}", result)
         return result
