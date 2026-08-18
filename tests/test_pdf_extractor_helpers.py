@@ -137,6 +137,59 @@ class PdfHelperTests(unittest.TestCase):
         self.assertEqual(continued[0][3], "UPI/NEXT/ Receipt")
         self.assertEqual(continued[0][6], "500.00")
 
+    def test_gridless_date_table_skips_serial_and_dual_date_layout(self) -> None:
+        # A statement with SlNo, separate Transaction Date and Value Date columns,
+        # and a Cheque Number column -- e.g. many Indian bank net-banking exports.
+        # This is a different, richer layout than the single-Date-column statements
+        # this heuristic targets, and must be left for _extract_coordinate_table.
+        words = [
+            word("SlNo", 7, 270),
+            word("Transaction", 42, 270),
+            word("Date", 86, 270),
+            word("Value", 112, 270),
+            word("Date", 134.7, 270),
+            word("Particulars", 182, 270),
+            word("Cheque", 282, 270),
+            word("Number", 312.2, 270),
+            word("Withdrawals", 349, 270),
+            word("Deposits", 442, 270),
+            word("Balance", 530, 270),
+            word("Amount", 561.1, 270),
+            word("1", 15, 290),
+            word("01-07-2026", 42, 290),
+            word("01-07-2026", 112, 290),
+            word("Dummy", 182, 290),
+            word("payee", 220, 290),
+            word("500.00", 442, 290),
+            word("1,500.00", 530, 290),
+        ]
+
+        rows = PdfExtractor._extract_gridless_date_table(FakeCoordinatePage(words, []))
+
+        self.assertEqual(rows, [])
+
+    def test_gridless_date_table_still_handles_single_date_column_layout(self) -> None:
+        words = [
+            word("DATE", 10, 100),
+            word("PARTICULARS", 80, 100),
+            word("CHQ.NO.", 300, 100),
+            word("WITHDRAWALS", 380, 100),
+            word("DEPOSITS", 470, 100),
+            word("BALANCE", 560, 100),
+            word("01-07-2026", 10, 120),
+            word("NEFT", 80, 120),
+            word("REF1", 300, 120),
+            word("500.00", 470, 120),
+            word("1,500.00Cr", 560, 120),
+        ]
+
+        rows = PdfExtractor._extract_gridless_date_table(FakeCoordinatePage(words, []))
+
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(
+            rows[0], ["Date", "Particulars", "Cheque Number", "Withdrawals", "Deposits", "Balance Amount"]
+        )
+
     def test_gridless_date_table_handles_repeated_sections_and_multiline_rows(self) -> None:
         words = [
             word("DATE", 10, 100),

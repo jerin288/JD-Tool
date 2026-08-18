@@ -572,6 +572,17 @@ class PdfExtractor:
         sections: list[tuple[float, float, list[str], list[float]]] = []
         lines = cls._word_lines(words)
         for line in lines:
+            normalized_words = [
+                re.sub(r"[^a-z0-9]+", "", str(word["text"]).casefold()) for word in line
+            ]
+            has_serial_column = any(word in {"slno", "sno", "serial"} for word in normalized_words)
+            date_word_count = sum(1 for word in normalized_words if word == "date")
+            if has_serial_column or date_word_count >= 2:
+                # This line has a SlNo column and/or separate Transaction Date and Value
+                # Date columns -- a different, richer layout than the single-Date-column
+                # statements this heuristic targets. Let _extract_coordinate_table, which
+                # distinguishes those columns explicitly, handle it instead.
+                continue
             anchors: list[tuple[float, str]] = []
             for label, aliases in specifications:
                 match = next(
