@@ -9,6 +9,8 @@ from pathlib import Path
 from app.models.bank_template import BankTemplate
 from app.models.mapping import ColumnMapping
 
+BUILTIN_TEMPLATE_FILENAMES = {"common_indian_banks.json", "generic_indian_bank.json", "kotak.json"}
+
 
 class BankTemplateService:
     """Loads every template JSON document in a directory at runtime."""
@@ -99,6 +101,12 @@ class BankTemplateService:
         if mapping_errors:
             raise ValueError("Complete the required mapping first. " + " ".join(mapping_errors))
         template_id = re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_")
+        if f"{template_id}.json" in BUILTIN_TEMPLATE_FILENAMES:
+            raise ValueError(
+                f"'{name}' matches a built-in bank template file name, which the app refreshes on every "
+                "launch and cannot store custom changes. Save it under a different name, "
+                f"e.g. '{name} (Custom)'."
+            )
         existing = self.get_by_bank(name)
         template = BankTemplate(
             bank_name=name,
@@ -123,7 +131,7 @@ class BankTemplateService:
         if template is None:
             return
         path = Path(template.source_path)
-        if not path.name.startswith("user_") and path.name == "common_indian_banks.json":
+        if path.name in BUILTIN_TEMPLATE_FILENAMES:
             raise ValueError("Built-in bank templates cannot be deleted.")
         if path.exists():
             path.unlink()

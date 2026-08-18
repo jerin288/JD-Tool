@@ -108,6 +108,27 @@ class PhaseTwoServiceTests(unittest.TestCase):
         hdfc = next(item for item in templates if item.bank_name == "HDFC Bank")
         self.assertIn("ValueDt", hdfc.column_aliases["value_date"])
 
+    def test_save_mapping_rejects_a_name_colliding_with_a_builtin_template_file(self) -> None:
+        with TemporaryDirectory() as directory:
+            service = BankTemplateService(Path(directory))
+            mapping = ColumnMapping(transaction_date=0, description=1, debit=2, credit=3)
+            with self.assertRaisesRegex(ValueError, "built-in"):
+                service.save_mapping("Kotak", mapping)
+            self.assertFalse((Path(directory) / "kotak.json").exists())
+            saved = service.save_mapping("Kotak (Custom)", mapping)
+            self.assertEqual(saved.mapping.debit, 2)
+
+    def test_delete_rejects_all_builtin_template_files(self) -> None:
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "kotak.json"
+            path.write_text(
+                '{"schema_version": 2, "template_id": "kotak", "bank_name": "Kotak"}', encoding="utf-8"
+            )
+            service = BankTemplateService(Path(directory))
+            with self.assertRaises(ValueError):
+                service.delete("kotak")
+            self.assertTrue(path.exists())
+
     def test_kotak_ifsc_detection_does_not_false_match_sbin_reference(self) -> None:
         template_directory = Path(__file__).resolve().parents[1] / "config" / "bank_templates"
         service = BankTemplateService(template_directory)
