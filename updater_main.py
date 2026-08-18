@@ -180,6 +180,13 @@ def write_result(data_root: Path, *, status: str, version: str, message: str) ->
     os.replace(temporary, result_path)
 
 
+def _validate_copied_staging(staging: Path, incoming: Path) -> None:
+    """Reject incomplete PyInstaller onedir copies before the folder is swapped."""
+    for relative in (Path("_internal") / "python312.dll", Path("_internal") / "python3.dll"):
+        if (staging / relative).is_file() and not (incoming / relative).is_file():
+            raise UpdaterError(f"The staged application is missing {relative.as_posix()}.")
+
+
 def apply_update(
     *,
     pid: int,
@@ -208,10 +215,21 @@ def apply_update(
         raise
 
     _remove_directory(incoming, install.parent)
-    shutil.copytree(staging, incoming, symlinks=False)
-    if not (incoming / launch_exe).is_file():
+    try:
+        shutil.copytree(staging, incoming, symlinks=False)
+        if not (incoming / launch_exe).is_file():
+            raise UpdaterError("Copying the staged application did not complete successfully.")
+        _validate_copied_staging(staging, incoming)
+    except Exception as exc:
         _remove_directory(incoming, install.parent)
-        raise UpdaterError("Copying the staged application did not complete successfully.")
+        write_result(
+            data,
+            status="failed",
+            version=version,
+            message=f"Copying the staged application failed: {exc}",
+        )
+        launch_application(installed_executable)
+        raise
 
     moved_installed = False
     try:
